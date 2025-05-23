@@ -16,11 +16,10 @@ int main(void)
     pid_t pid;
     int status;
     size_t read;
-
-    
     char *delim = ":";
     char *token;
     size_t n = 20;
+    extern char **environ;
     char *buf =  malloc(sizeof(char) * n);
 
     while (1)
@@ -39,30 +38,59 @@ int main(void)
         if (read == -1)
         {
             perror("EOF recieved!");
+            free(buf);
             exit(0);
         }
+        
+        char *count_args[20];
+        int i = 0;
+        char *args = strtok(buf, " ");
+        while (args && i < 19)
+        {
+            count_args[i++] = args;
+            args = strtok(NULL, " ");
+        }
+        count_args[i] = NULL;
+
+
 
         char *path =  strdup(getenv("PATH"));
 
         if (!path)
         {
             fprintf(stderr, "PATH not found\n");
-            continue;
+            break;
         }
 
-        token = strtok(path, delim);
 
         pid = fork();
 
         if (pid < 0)
         {
             perror("failed to create a process!");
+            free(path);
+            free(buf);
             return (-1);
+        }
+
+        if (strcmp(count_args[0], "exit") == 0)
+        {
+            exit(0);
+        }
+
+        if (strcmp(count_args[0], "env") == 0)
+        {
+            for (int j = 0; environ[j] != NULL; j++)
+            {
+                printf("%s\n", environ[j]);
+            }
+            continue;
         }
 
         if (pid == 0)
         {
             
+            token = strtok(path, delim);
 
             if (buf == NULL)
             {
@@ -71,46 +99,52 @@ int main(void)
 
             while (token != NULL)
             {
-                size_t len = strlen(token);
-                char *full_path = malloc(len + 2);  /* // +1 for '/' and +1 for '\0  */
+                char *full_path = malloc(strlen(token) + strlen(buf) + 2);
+  /* // +1 for '/' and +1 for '\0  */
 
                 if (full_path == NULL)
                 {
                     perror("malloc failed!");
-                    return (-1);
+                    free(path);
+                    free(buf);
+                    exit(1);
                 }
 
                 strcpy(full_path, token);
                 strcat(full_path, "/");
                 
-                if (access(strcat(full_path, buf), X_OK) == 0)
+                if (access(strcat(full_path, count_args[0]), X_OK) == 0)
                 {
-                    char *argv[] = {full_path, NULL};
-                    int val = execve(argv[0], argv, NULL);
+                    execve(full_path, count_args, NULL);
 
-                    if (val == -1)
-                    {
-                        perror("error executing!");  
-                        break; 
-                    }
+            
+                    perror("error executing!");  
+                    free(full_path);
+                    free(path);
+                    free(buf);
+                    exit(1);
+                    
                 }
 
                 free(full_path);
                 token = strtok(NULL, delim);
-
-
             }
-
+            
+            fprintf(stderr, "%s: command not found :{ \n", buf);
             free(buf);
+            free(path);
+            exit(127);
 
         }
         else
         {
             wait(&status);
+            free(path);
         }
 
     }
 
+    free(buf);
     return (0);
 
 }
